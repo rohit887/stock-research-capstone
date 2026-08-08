@@ -203,9 +203,16 @@ with get_connection() as conn:
     conn.autocommit = True
     with conn.cursor() as cur:
         for idx, stmt in enumerate(stmts, 1):
-            label = " ".join(stmt.split())[:70]
+            # Drop whole-line comments so labels are accurate and comment-only
+            # chunks (e.g. the trailing grants block) are skipped, not executed.
+            core = "\n".join(
+                ln for ln in stmt.splitlines() if not ln.strip().startswith("--")
+            ).strip()
+            if not core:
+                continue
+            label = " ".join(core.split())[:70]
             try:
-                cur.execute(stmt)
+                cur.execute(core)
                 print(f"[{idx:02d}] OK    {label}")
             except Exception as e:  # noqa: BLE001
                 failures.append((idx, label, str(e).splitlines()[0]))

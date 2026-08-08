@@ -188,15 +188,18 @@ CREATE INDEX IF NOT EXISTS idx_filing_chunks_ann
 -- CREATE INDEX IF NOT EXISTS idx_filing_chunks_hnsw
 --     ON filing_chunks USING hnsw (embedding vector_cosine_ops);
 
--- --- BM25 full-text index (lakebase_text extension) ------------------
--- NOTE: lakebase_text is an early -dev build. Verify access-method name.
--- Fallback is a standard Postgres GIN index on to_tsvector('english', chunk_text).
-CREATE INDEX IF NOT EXISTS idx_filing_chunks_bm25
-    ON filing_chunks USING lakebase_bm25 (chunk_text);
+-- --- Lexical / full-text index --------------------------------------
+-- The hybrid RRF query (capstone-schema.md §5) ranks lexical matches with
+-- native Postgres FTS (to_tsvector + ts_rank_cd), so a GIN index on the
+-- tsvector is what actually accelerates it. This is the reliable primary.
+CREATE INDEX IF NOT EXISTS idx_filing_chunks_fts
+    ON filing_chunks USING gin (to_tsvector('english', chunk_text));
 
--- Fallback (native Postgres FTS) — uncomment if lakebase_bm25 unavailable:
--- CREATE INDEX IF NOT EXISTS idx_filing_chunks_fts
---     ON filing_chunks USING gin (to_tsvector('english', chunk_text));
+-- Optional true-BM25 via lakebase_text (-dev): it has no default operator
+-- class for text, so an explicit opclass is required and its name is
+-- build-specific. Confirm against current Lakebase docs, then swap in, e.g.:
+-- CREATE INDEX IF NOT EXISTS idx_filing_chunks_bm25
+--     ON filing_chunks USING lakebase_bm25 (chunk_text <bm25_opclass>);
 
 
 -- ---------------------------------------------------------------------
