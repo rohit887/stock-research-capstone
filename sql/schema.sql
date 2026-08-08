@@ -5,6 +5,12 @@
 -- all live here. See capstone-schema.md for rationale, the hybrid-search
 -- (RRF) query pattern, and index-syntax notes.
 --
+-- AUTHENTICATION NOTE:
+-- This DDL requires NATIVE PASSWORD authentication for reliable execution.
+-- OAuth tokens in Lakebase Autoscaling can route to different instances,
+-- causing tables created on instance A to not appear on instance B.
+-- See docs/lakebase-authentication-guide.md for full explanation.
+--
 -- Run order matters. Sections are separated so that the standard table DDL
 -- (Section 3) succeeds even if the early `-dev` index access methods in
 -- Section 5 need a syntax tweak. notebooks/00_setup.py runs this file
