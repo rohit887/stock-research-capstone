@@ -21,40 +21,55 @@
 
 # COMMAND ----------
 
-# Config — fill these in for your Lakebase instance (account-specific).
-dbutils.widgets.text("pg_host", "", "Lakebase host (read-write DNS)")
-dbutils.widgets.text("pg_database", "databricks_postgres", "Lakebase database name")
-dbutils.widgets.text("pg_user", "", "Lakebase user (your workspace identity email)")
+# Config — the ONLY value you MUST supply is the Lakebase instance name
+# (the "resource name" shown on the Lakebase instance page). Host and user are
+# auto-derived from it via the SDK; the override widgets stay blank unless the
+# auto-derivation fails and you need to paste values manually.
+dbutils.widgets.text("lakebase_instance", "", "Lakebase instance / resource name  *REQUIRED*")
+dbutils.widgets.text("pg_database", "databricks_postgres", "Database name")
+dbutils.widgets.text("pg_host", "", "Host override (blank = auto from instance)")
+dbutils.widgets.text("pg_user", "", "User override (blank = current identity)")
 dbutils.widgets.text("pg_port", "5432", "Port")
-dbutils.widgets.text("lakebase_instance", "", "Lakebase instance name (for credential API)")
 dbutils.widgets.text("repo_root", "", "Repo root path (blank = auto-detect)")
 dbutils.widgets.text("contact_email", "rohit885@gmail.com", "Contact email for SEC EDGAR User-Agent")
 
 # COMMAND ----------
 
 import os
+import uuid
 import psycopg2
 from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-PG_HOST = dbutils.widgets.get("pg_host").strip()
-PG_DATABASE = dbutils.widgets.get("pg_database").strip()
-PG_USER = dbutils.widgets.get("pg_user").strip()
-PG_PORT = int(dbutils.widgets.get("pg_port").strip() or "5432")
 LAKEBASE_INSTANCE = dbutils.widgets.get("lakebase_instance").strip()
+PG_DATABASE = dbutils.widgets.get("pg_database").strip() or "databricks_postgres"
+PG_PORT = int(dbutils.widgets.get("pg_port").strip() or "5432")
+assert LAKEBASE_INSTANCE, "Set the 'lakebase_instance' widget to your Lakebase resource name."
+
+# Auto-derive host + user from the instance (override widgets win if set).
+_instance = w.database.get_database_instance(name=LAKEBASE_INSTANCE)
+_auto_host = (getattr(_instance, "read_write_dns", None)
+              or getattr(_instance, "dns", None)
+              or getattr(_instance, "host", None))
+PG_HOST = dbutils.widgets.get("pg_host").strip() or _auto_host
+PG_USER = dbutils.widgets.get("pg_user").strip() or w.current_user.me().user_name
+
+print(f"instance = {LAKEBASE_INSTANCE}  (state={getattr(_instance, 'state', '?')})")
+print(f"host     = {PG_HOST}")
+print(f"user     = {PG_USER}")
+print(f"database = {PG_DATABASE}   port = {PG_PORT}")
+assert PG_HOST, ("Could not auto-derive the host from the instance. Open the Lakebase "
+                 "instance page, copy its host/DNS, and paste it into the pg_host widget.")
 
 
 def _lakebase_password() -> str:
     """Short-lived credential used as the Postgres password.
 
-    Strategy 1 (preferred): Lakebase-native credential via the database API.
-    Strategy 2 (fallback):   the workspace OAuth/PAT token from the SDK config.
-    Adjust here if your SDK version exposes a different method.
+    Preferred: Lakebase-native database credential (an OAuth token scoped to the
+    instance). Fallback: the workspace auth token from the SDK config.
     """
-    # Strategy 1 — Lakebase database credential
     try:
-        import uuid
         cred = w.database.generate_database_credential(
             request_id=str(uuid.uuid4()),
             instance_names=[LAKEBASE_INSTANCE],
@@ -62,17 +77,9 @@ def _lakebase_password() -> str:
         if getattr(cred, "token", None):
             return cred.token
     except Exception as e:  # noqa: BLE001
-        print(f"[creds] database.generate_database_credential unavailable: {e}")
-
-    # Strategy 2 — SDK auth token
-    try:
-        headers = w.config.authenticate()  # {'Authorization': 'Bearer ...'}
-        return headers["Authorization"].split(" ", 1)[1]
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError(
-            "Could not obtain a Lakebase credential. Set lakebase_instance, or wire "
-            "up the token method your SDK version exposes in _lakebase_password()."
-        ) from e
+        print(f"[creds] generate_database_credential unavailable, falling back: {e}")
+    headers = w.config.authenticate()  # {'Authorization': 'Bearer ...'}
+    return headers["Authorization"].split(" ", 1)[1]
 
 
 def get_connection():
