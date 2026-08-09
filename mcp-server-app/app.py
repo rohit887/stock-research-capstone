@@ -11,13 +11,8 @@ Exposes research tools via FastMCP that agents can call to:
 All database access and external API calls are delegated to research_store.py
 and market_data.py adapter modules in the sibling mcp-server/ directory.
 """
-import sys
-import os
 import time
-
-# Add sibling mcp-server directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mcp-server'))
-
+import os
 from fastmcp import FastMCP
 import research_store as rs
 
