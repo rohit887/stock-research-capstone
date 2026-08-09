@@ -18,6 +18,11 @@ import agent                          # noqa: E402  (frontend/agent.py)
 
 st.set_page_config(page_title="Stock Research Assistant", page_icon="📈", layout="wide")
 
+
+def _md(text: str) -> str:
+    """Escape '$' so Streamlit markdown doesn't treat price figures as LaTeX math."""
+    return (text or "").replace("$", "\\$")
+
 # --------------------------------------------------------------------------
 # Session state
 # --------------------------------------------------------------------------
@@ -69,7 +74,7 @@ st.warning("⚠️ Research and educational tool — **not** investment advice. 
 # --------------------------------------------------------------------------
 for m in st.session_state.display:
     with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+        st.markdown(_md(m["content"]))
         if m.get("trace"):
             with st.expander(f"🔧 {len(m['trace'])} tool call(s)"):
                 for t in m["trace"]:
@@ -81,7 +86,7 @@ prompt = st.chat_input("Ask about filings, prices, or risk — e.g. "
 if prompt:
     st.session_state.display.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(_md(prompt))
 
     with st.chat_message("assistant"):
         with st.spinner("Researching…"):
@@ -92,7 +97,7 @@ if prompt:
                 st.session_state.agent_history = out["messages"]
             except Exception as e:  # noqa: BLE001
                 answer, trace = f"Sorry — the agent hit an error: `{e}`", []
-        st.markdown(answer)
+        st.markdown(_md(answer))
         if trace:
             with st.expander(f"🔧 {len(trace)} tool call(s)"):
                 for t in trace:
