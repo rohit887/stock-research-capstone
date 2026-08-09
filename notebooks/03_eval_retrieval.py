@@ -67,6 +67,29 @@ def _vec_literal(emb):
     return "[" + ",".join(f"{x:.6f}" for x in emb) + "]"
 
 
+import re
+
+# Question/function words to drop so BM25 ORs only the content terms. plainto_tsquery
+# ANDs every term (too strict for NL queries → no matches); we OR content lexemes.
+_STOP = {"the", "a", "an", "of", "to", "and", "or", "in", "on", "for", "do", "does",
+         "did", "what", "how", "is", "are", "was", "were", "be", "been", "about",
+         "from", "with", "by", "as", "at", "that", "this", "these", "those", "our",
+         "we", "us", "you", "your", "it", "its", "their", "they", "which", "who",
+         "when", "where", "why", "can", "could", "should", "would", "may", "might",
+         "will", "than", "then", "say", "says", "describe", "worry", "worries"}
+
+
+def _or_tsquery(query: str) -> str:
+    """Turn an NL query into an OR-ed tsquery string (content words only)."""
+    words = re.findall(r"[a-z0-9]+", query.lower())
+    seen, uniq = set(), []
+    for w in words:
+        if len(w) > 1 and w not in _STOP and w not in seen:
+            seen.add(w)
+            uniq.append(w)
+    return " | ".join(uniq)
+
+
 with get_connection() as _c, _c.cursor() as _cur:
     _cur.execute("SELECT count(*) FROM filing_chunks WHERE embedding IS NOT NULL;")
     print("embedded chunks:", _cur.fetchone()[0])
@@ -92,25 +115,29 @@ def vector_search(query, ticker=None, section=None, top_k=TOP_K):
 
 
 def bm25_search(query, ticker=None, section=None, top_k=TOP_K):
+    tsq = _or_tsquery(query)
+    if not tsq:
+        return []
     sql = """
         SELECT chunk_id, ticker, section, left(chunk_text, 180) AS snip,
                ts_rank_cd(to_tsvector('english', chunk_text),
-                          plainto_tsquery('english', %(q)s)) AS rank
+                          to_tsquery('english', %(q)s)) AS rank
         FROM filing_chunks
-        WHERE to_tsvector('english', chunk_text) @@ plainto_tsquery('english', %(q)s)
+        WHERE to_tsvector('english', chunk_text) @@ to_tsquery('english', %(q)s)
           AND (%(tk)s IS NULL OR ticker = %(tk)s)
           AND (%(sec)s IS NULL OR section = %(sec)s)
         ORDER BY rank DESC
         LIMIT %(k)s;
     """
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(sql, {"q": query, "tk": ticker, "sec": section, "k": top_k})
+        cur.execute(sql, {"q": tsq, "tk": ticker, "sec": section, "k": top_k})
         return cur.fetchall()
 
 
 def hybrid_search(query, ticker=None, section=None, top_k=TOP_K, k_rrf=60, pool=50):
     """Reciprocal Rank Fusion of vector + BM25 (capstone-schema.md §5)."""
     qv = _vec_literal(embed_query(query))
+    tsq = _or_tsquery(query)
     sql = """
         WITH filtered AS (
             SELECT chunk_id, ticker, section, chunk_text, embedding
@@ -126,9 +153,9 @@ def hybrid_search(query, ticker=None, section=None, top_k=TOP_K, k_rrf=60, pool=
         bm25 AS (
             SELECT chunk_id, ROW_NUMBER() OVER (
                        ORDER BY ts_rank_cd(to_tsvector('english', chunk_text),
-                                           plainto_tsquery('english', %(q)s)) DESC) AS rank
+                                           to_tsquery('english', %(q)s)) DESC) AS rank
             FROM filtered
-            WHERE to_tsvector('english', chunk_text) @@ plainto_tsquery('english', %(q)s)
+            WHERE %(q)s <> '' AND to_tsvector('english', chunk_text) @@ to_tsquery('english', %(q)s)
             LIMIT %(pool)s
         ),
         fused AS (
@@ -144,7 +171,7 @@ def hybrid_search(query, ticker=None, section=None, top_k=TOP_K, k_rrf=60, pool=
         LIMIT %(topk)s;
     """
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(sql, {"qv": qv, "q": query, "tk": ticker, "sec": section,
+        cur.execute(sql, {"qv": qv, "q": tsq, "tk": ticker, "sec": section,
                           "k": k_rrf, "pool": pool, "topk": top_k})
         return cur.fetchall()
 
