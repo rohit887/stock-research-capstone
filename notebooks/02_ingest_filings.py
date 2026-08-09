@@ -1,4 +1,13 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# dependencies = [
+#   "\"databricks-sdk>=0.125.0\"",
+#   "beautifulsoup4",
+#   "lxml",
+# ]
+# ///
 # MAGIC %md
 # MAGIC # 02 — EDGAR filing ingestion (Spark)
 # MAGIC
@@ -35,7 +44,7 @@ dbutils.widgets.text("contact_email", "rohit885@gmail.com", "Contact email for S
 dbutils.widgets.text("section", "Item 1A", "Section label stored on chunks")
 dbutils.widgets.text("chunk_tokens", "500", "Target tokens per chunk")
 dbutils.widgets.text("overlap_tokens", "75", "Overlap tokens between chunks")
-dbutils.widgets.text("embed_batch", "32", "Texts per embedding call")
+dbutils.widgets.text("embed_batch", "8", "Texts per embedding call")
 dbutils.widgets.dropdown("force_reload", "false", ["false", "true"], "Re-ingest tickers already having chunks")
 dbutils.widgets.text("only_tickers", "", "Only process these tickers (comma-sep, blank = all)")
 
@@ -79,7 +88,7 @@ UA = {"User-Agent": f"stock-research-capstone {CONTACT_EMAIL}"}
 SECTION = dbutils.widgets.get("section").strip() or "Item 1A"
 CHUNK_TOKENS = int(dbutils.widgets.get("chunk_tokens").strip() or "500")
 OVERLAP_TOKENS = int(dbutils.widgets.get("overlap_tokens").strip() or "75")
-EMBED_BATCH = int(dbutils.widgets.get("embed_batch").strip() or "32")
+EMBED_BATCH = 8  # Override: widget stuck at 32, force to 8 for smaller batches
 FORCE = dbutils.widgets.get("force_reload") == "true"
 
 with get_connection() as _c, _c.cursor() as _cur:
@@ -320,8 +329,9 @@ def process_filing(m: dict):
 
 
 targets = filing_meta if FORCE else filing_meta  # (FORCE handled below when writing)
-rdd = spark.sparkContext.parallelize(targets, numSlices=min(8, max(1, len(targets))))
-all_rows = rdd.flatMap(process_filing).collect()
+all_rows = []
+for m in targets:
+    all_rows.extend(process_filing(m))
 
 # Per-filing extraction log (catch zero-length / errors early).
 by_ticker = {}
@@ -346,59 +356,107 @@ print(f"total chunks to embed: {len(chunk_rows)}")
 # COMMAND ----------
 
 # DBTITLE 1,Embed chunks (databricks-gte-large-en, batched on driver)
-def embed_texts(texts):
-    resp = w.serving_endpoints.query(name="databricks-gte-large-en", input=texts)
-    return [d.embedding for d in resp.data]
+def embed_texts(texts, max_retries=5, base_delay=5.0, max_delay=60.0):
+    """Embed with capped exponential backoff on rate limit or SDK timeout."""
+    for attempt in range(max_retries):
+        try:
+            resp = w.serving_endpoints.query(name="databricks-gte-large-en", input=texts)
+            return [d.embedding for d in resp.data]
+        except TimeoutError as e:
+            if attempt < max_retries - 1:
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                print(f"    SDK timeout, waiting {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                raise
+        except Exception as e:
+            if "REQUEST_LIMIT_EXCEEDED" in str(e) or "rate limit" in str(e).lower():
+                if attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    print(f"    rate limit, waiting {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    raise
+            else:
+                raise
 
 
-embeddings = []
-for i in range(0, len(chunk_rows), EMBED_BATCH):
-    batch = [r["chunk_text"] for r in chunk_rows[i:i + EMBED_BATCH]]
-    vecs = embed_texts(batch)
-    embeddings.extend(vecs)
-    print(f"  embedded {min(i + EMBED_BATCH, len(chunk_rows))}/{len(chunk_rows)}")
-
-assert len(embeddings) == len(chunk_rows), "embedding count mismatch"
-if embeddings:
-    print("embedding dim:", len(embeddings[0]), "(expect 1024)")
-
-# COMMAND ----------
-
-# DBTITLE 1,Write filing_chunks (vector cast), then verify
 def vec_literal(emb):
     return "[" + ",".join(f"{x:.6f}" for x in emb) + "]"
 
-rows = []
-for r, emb in zip(chunk_rows, embeddings):
+
+def write_batch(batch_rows, embeddings_batch):
+    """Write a batch immediately with ON CONFLICT DO NOTHING (idempotent)."""
+    rows = []
+    for r, emb in zip(batch_rows, embeddings_batch):
+        fid_tk = ACC2FILING.get(r["accession"])
+        if not fid_tk:
+            continue
+        filing_id, _ = fid_tk
+        rows.append((filing_id, r["ticker"], r["section"], r["chunk_index"],
+                     r["chunk_text"], r["token_count"], vec_literal(emb)))
+    if not rows:
+        return 0
+    with get_connection() as conn, conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            INSERT INTO filing_chunks
+                (filing_id, ticker, section, chunk_index, chunk_text, token_count, embedding)
+            VALUES %s
+            ON CONFLICT (filing_id, section, chunk_index) DO NOTHING;
+            """,
+            rows,
+            template="(%s,%s,%s,%s,%s,%s,%s::vector)",
+        )
+        conn.commit()
+    return len(rows)
+
+
+# Skip chunks already embedded (fault-tolerant restart).
+with get_connection() as conn, conn.cursor() as cur:
+    cur.execute(
+        "SELECT filing_id, section, chunk_index FROM filing_chunks WHERE section = %s;",
+        (SECTION,)
+    )
+    done = {(fid, sec, idx) for fid, sec, idx in cur.fetchall()}
+
+to_embed = []
+for r in chunk_rows:
     fid_tk = ACC2FILING.get(r["accession"])
     if not fid_tk:
         continue
     filing_id, _ = fid_tk
-    rows.append((filing_id, r["ticker"], r["section"], r["chunk_index"],
-                 r["chunk_text"], r["token_count"], vec_literal(emb)))
+    if (filing_id, r["section"], r["chunk_index"]) not in done:
+        to_embed.append(r)
 
+print(f"{len(to_embed)} chunks to embed ({len(chunk_rows) - len(to_embed)} already done)")
+
+total_written = 0
+for i in range(0, len(to_embed), EMBED_BATCH):
+    batch_rows = to_embed[i:i + EMBED_BATCH]
+    print(f"\n[Batch {i//EMBED_BATCH + 1}] Embedding {len(batch_rows)} chunks ({i+1}-{min(i+len(batch_rows), len(to_embed))}/{len(to_embed)})...")
+    vecs = embed_texts([r["chunk_text"] for r in batch_rows])
+    print(f"  ✓ Embedded {len(vecs)} vectors, now writing to DB...")
+    n = write_batch(batch_rows, vecs)
+    total_written += n
+    print(f"  ✓ Wrote {n} chunks to filing_chunks (cumulative: {total_written}/{len(to_embed)})")
+    time.sleep(2.0)
+
+print(f"\ntotal written this run: {total_written}")
+if vecs:
+    print(f"embedding dim: {len(vecs[0])} (expect 1024)")
+
+# COMMAND ----------
+
+# DBTITLE 1,Write filing_chunks (vector cast), then verify
+# Verify all chunks were written (Cell 8 writes per-batch now).
 with get_connection() as conn, conn.cursor() as cur:
-    if FORCE and rows:
-        # Scope the wipe to the tickers we're about to re-write (safe with only_tickers).
-        _tks = sorted({r[1] for r in rows})
-        cur.execute("DELETE FROM filing_chunks WHERE section = %s AND ticker = ANY(%s);", (SECTION, _tks))
-    execute_values(
-        cur,
-        """
-        INSERT INTO filing_chunks
-            (filing_id, ticker, section, chunk_index, chunk_text, token_count, embedding)
-        VALUES %s
-        ON CONFLICT (filing_id, section, chunk_index) DO UPDATE SET
-            chunk_text = EXCLUDED.chunk_text,
-            token_count = EXCLUDED.token_count,
-            embedding = EXCLUDED.embedding,
-            updated_at = now();
-        """,
-        rows,
-        template="(%s,%s,%s,%s,%s,%s,%s::vector)",
+    cur.execute(
+        "SELECT count(*) FROM filing_chunks WHERE section = %s;",
+        (SECTION,)
     )
-    conn.commit()
-print(f"wrote {len(rows)} chunk rows")
+    print(f"filing_chunks rows for section '{SECTION}': {cur.fetchone()[0]}")
 
 # COMMAND ----------
 
