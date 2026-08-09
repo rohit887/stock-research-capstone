@@ -208,37 +208,76 @@ _SECTION = SECTION
 _CHUNK_TOKENS = CHUNK_TOKENS
 _OVERLAP_TOKENS = OVERLAP_TOKENS
 
-START_PATS = [
-    r"item\s*1a[\.\)\s:\-—]*risk\s+factors",  # preferred: heading with title
-    r"item\s*1a\b",                            # fallback: bare marker
-]
-END_PATS = [r"item\s*1b\b", r"item\s*2\b"]
+def _loose(s: str) -> str:
+    """Char-by-char pattern with optional whitespace between chars. Inline-XBRL
+    span breaks insert stray spaces inside words ('RIS K FACTORS', 'Item 1 A'),
+    so strict word matching misses real headings; this tolerates them."""
+    return r"\s*".join(re.escape(c) for c in s if not c.isspace())
+
+
+_START1 = re.compile(_loose("item1a") + r".{0,20}?" + _loose("riskfactors"), re.I)
+_RF = re.compile(_loose("riskfactors"), re.I)
+_END_STRICT = [re.compile(_loose(x), re.I) for x in ("item1b", "item1c", "item2", "item3", "item4")]
+_END_HEADING = _END_STRICT + [re.compile(_loose(x), re.I) for x in (
+    "unresolvedstaffcomments", "legalproceedings", "minesafetydisclosures",
+    "quantitativeandqualitativedisclosuresaboutmarketrisk")]
+# Anchor-quality filters: skip cross-references, not the actual section heading.
+_BAD_PRE = re.compile(r'[“"”\')]|\bsee\b|\band\b|\bthe\b|\bour\b|,\s*$', re.I)
+_XREF = re.compile(r'^\s*(in this form|on pages?|for (a|further|more)|section (of|in|,)|'
+                   r'below|above|and elsewhere|herein|discussed|described|set forth|contained)', re.I)
 
 
 def _html_to_text(html: str) -> str:
+    import warnings as _w
     from bs4 import BeautifulSoup
+    try:  # some 10-Ks are inline-XBRL (XHTML) — silence the HTML-parser warning
+        from bs4 import XMLParsedAsHTMLWarning
+        _w.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+    except Exception:  # noqa: BLE001
+        pass
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(["script", "style"]):
         tag.decompose()
-    text = soup.get_text(" ")
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", soup.get_text(" ")).strip()
+
+
+def _nearest_end(text: str, s: int, ends) -> int:
+    e = len(text)
+    for ep in ends:
+        m = ep.search(text, s + 80)
+        if m:
+            e = min(e, m.start())
+    return e
 
 
 def _extract_section(text: str) -> str:
-    start = None
-    for pat in START_PATS:
-        hits = list(re.finditer(pat, text, re.IGNORECASE))
-        if hits:
-            start = hits[-1].start()  # LAST occurrence skips the table of contents
-            break
-    if start is None:
-        return ""
-    end = len(text)
-    for ep in END_PATS:
-        m = re.search(ep, text[start + 50:], re.IGNORECASE)
-        if m:
-            end = min(end, start + 50 + m.start())
-    return text[start:end].strip()
+    """Two-tier Item 1A extractor robust to inconsistent 10-K HTML.
+
+    Tier 1 — anchor on 'Item 1A … Risk Factors', bound by the next strict item
+    marker (1B/1C/2/3/4), take the longest non-cross-reference match.
+    Tier 2 (fallback for filings whose body heading is a bare 'Risk Factors' with
+    no inline 'Item 1A', e.g. GE/MS) — anchor on 'Risk Factors' headings, bound by
+    strict markers plus distinctive section headings. Over-extraction is preferred
+    to missing the section; the per-filing length log flags outliers for review.
+    """
+    best = ""
+    for m in _START1.finditer(text):
+        if _XREF.match(text[m.end():m.end() + 40]):
+            continue
+        c = text[m.start():_nearest_end(text, m.start(), _END_STRICT)].strip()
+        if len(c) > len(best):
+            best = c
+    if len(best) >= 3000:
+        return best
+    best2 = ""
+    for m in _RF.finditer(text):
+        s = m.start()
+        if _BAD_PRE.search(text[max(0, s - 25):s]) or _XREF.match(text[m.end():m.end() + 40]):
+            continue
+        c = text[s:_nearest_end(text, s, _END_HEADING)].strip()
+        if len(c) > len(best2):
+            best2 = c
+    return (best2[:300000]) if len(best2) > len(best) else best
 
 
 def _chunk(text: str):
