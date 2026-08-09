@@ -10,7 +10,9 @@ import json
 
 import streamlit as st
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mcp-server"))
+# Self-contained: research_store.py + agent.py are bundled in this folder (Databricks
+# Apps deploy only the app's own directory, not sibling folders).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import research_store as rs          # noqa: E402
 import agent                          # noqa: E402  (frontend/agent.py)
 

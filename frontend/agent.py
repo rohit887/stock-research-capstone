@@ -18,7 +18,9 @@ import sys
 import json
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mcp-server"))
+# research_store.py is bundled alongside this file (Databricks Apps deploy only the
+# app's own folder, so the adapter is copied here rather than imported from a sibling).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import research_store as rs  # noqa: E402
 
 from databricks.sdk import WorkspaceClient  # noqa: E402
