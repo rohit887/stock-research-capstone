@@ -100,7 +100,9 @@ TOOLS = [
             "ticker": {"type": "string"}}, "required": ["ticker"]}}},
     {"type": "function", "function": {
         "name": "save_research_note",
-        "description": "Save a research note, optionally tied to a ticker.",
+        "description": "Save or REMEMBER a research note, thought, or reminder, "
+                       "optionally tied to a ticker. Use when the user wants to record, "
+                       "save, remember, note, or revisit a finding or intention.",
         "parameters": {"type": "object", "properties": {
             "ticker": {"type": "string", "description": "optional ticker"},
             "note": {"type": "string"}}, "required": ["note"]}}},
