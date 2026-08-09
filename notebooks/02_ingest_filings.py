@@ -37,6 +37,7 @@ dbutils.widgets.text("chunk_tokens", "500", "Target tokens per chunk")
 dbutils.widgets.text("overlap_tokens", "75", "Overlap tokens between chunks")
 dbutils.widgets.text("embed_batch", "32", "Texts per embedding call")
 dbutils.widgets.dropdown("force_reload", "false", ["false", "true"], "Re-ingest tickers already having chunks")
+dbutils.widgets.text("only_tickers", "", "Only process these tickers (comma-sep, blank = all)")
 
 # COMMAND ----------
 
@@ -92,28 +93,51 @@ with get_connection() as conn, conn.cursor() as cur:
     cur.execute("SELECT ticker FROM companies ORDER BY ticker;")
     TICKERS = [r[0] for r in cur.fetchall()]
 assert TICKERS, "No companies found — run 01_ingest_prices.py first."
-print(f"{len(TICKERS)} tickers")
+_only = [t.strip().upper() for t in dbutils.widgets.get("only_tickers").split(",") if t.strip()]
+if _only:
+    TICKERS = [t for t in TICKERS if t.upper() in _only]
+print(f"{len(TICKERS)} tickers" + (f" (filtered to {_only})" if _only else ""))
 
 # SEC ticker -> CIK map (single request, zero-padded 10-digit CIK).
 _cm = requests.get("https://www.sec.gov/files/company_tickers.json", headers=UA, timeout=60).json()
 TICKER2CIK = {v["ticker"].upper(): (str(v["cik_str"]).zfill(10), v["title"]) for v in _cm.values()}
 
 
+def _newest_10k(cols: dict):
+    """Newest 10-K in a columnar submissions block (recent or an overflow file)."""
+    best = None
+    for form, acc, doc, fdate, rdate in zip(
+        cols["form"], cols["accessionNumber"], cols["primaryDocument"],
+        cols["filingDate"], cols["reportDate"],
+    ):
+        if form == "10-K" and (best is None or (fdate or "") > (best["filing_date"] or "")):
+            best = {"accession": acc, "primary": doc,
+                    "filing_date": fdate or None, "period_of_report": rdate or None}
+    return best
+
+
 def latest_10k(cik: str):
-    """Return metadata for the most recent 10-K, or None."""
+    """Most recent 10-K. Falls back to the overflow submission files, because very
+    active filers (e.g. XOM) push their 10-K out of the 1000-row `recent` window."""
     r = requests.get(f"https://data.sec.gov/submissions/CIK{cik}.json", headers=UA, timeout=60)
     r.raise_for_status()
-    recent = r.json()["filings"]["recent"]
-    for form, acc, doc, fdate, rdate in zip(
-        recent["form"], recent["accessionNumber"], recent["primaryDocument"],
-        recent["filingDate"], recent["reportDate"],
-    ):
-        if form == "10-K":
-            acc_nodash = acc.replace("-", "")
-            url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_nodash}/{doc}"
-            return {"accession": acc, "doc_url": url, "filing_date": fdate or None,
-                    "period_of_report": rdate or None}
-    return None
+    data = r.json()
+    best = _newest_10k(data["filings"]["recent"])
+    if best is None:
+        for f in data["filings"].get("files", []):
+            rr = requests.get(f"https://data.sec.gov/submissions/{f['name']}", headers=UA, timeout=60)
+            time.sleep(0.2)
+            if rr.status_code != 200:
+                continue
+            cand = _newest_10k(rr.json())
+            if cand and (best is None or (cand["filing_date"] or "") > (best["filing_date"] or "")):
+                best = cand
+    if best is None:
+        return None
+    acc_nodash = best["accession"].replace("-", "")
+    url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_nodash}/{best['primary']}"
+    return {"accession": best["accession"], "doc_url": url,
+            "filing_date": best["filing_date"], "period_of_report": best["period_of_report"]}
 
 
 filing_meta = []
