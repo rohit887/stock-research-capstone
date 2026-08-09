@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 import json
 import time
 
@@ -150,13 +151,66 @@ def _result_count(result) -> int:
     return 1
 
 
+_TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
+
+
+def _safe_json(s):
+    try:
+        return json.loads(s or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+
+def _coerce(v: str):
+    v = v.strip().strip("\"'")
+    if re.fullmatch(r"-?\d+", v):
+        return int(v)
+    if re.fullmatch(r"-?\d+\.\d+", v):
+        return float(v)
+    low = v.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    if low in ("none", "null", ""):
+        return None
+    return v
+
+
+def _parse_text_tool_calls(content: str):
+    """Fallback for when the endpoint returns tool calls as TEXT rather than
+    structured tool_calls, e.g. Llama's
+    `[get_price_summary(ticker=NVDA, period=ytd), search_filings(query=...)]`.
+    Only triggers when the content clearly begins with a call/list/python-tag, and
+    only recognizes our own tool names (so prose that merely mentions a tool is
+    not misparsed)."""
+    if not content:
+        return []
+    s = content.strip()
+    if not re.match(r"^\s*(\[|<\|python_tag\|>|[A-Za-z_]\w*\s*\()", s):
+        return []
+    calls = []
+    for i, (name, argstr) in enumerate(re.findall(r"([A-Za-z_]\w*)\s*\(([^)]*)\)", s)):
+        if name not in _TOOL_NAMES:
+            continue
+        args = {}
+        for part in argstr.split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                args[k.strip()] = _coerce(v)
+        calls.append({"id": f"call_{i}", "name": name, "args": args})
+    return calls
+
+
+def _strip_leaks(text: str) -> str:
+    return re.sub(r"<\|[a-z_]+\|>", "", text or "").strip()
+
+
 def run_agent(user_message: str, history: list | None = None,
               user_id: str = "demo-user", max_iters: int = MAX_TOOL_ITERS) -> dict:
     """Run one turn. Returns {answer, trace, messages}.
 
-    `trace` is the ordered list of tool calls (name, args, result, ms) so the UI
-    can show the agent's tool use. `messages` is the updated transcript to feed
-    back as history on the next turn.
+    Handles both structured tool_calls and models (llama-4-maverick) that emit tool
+    calls as text. `trace` lists the executed tool calls for the UI; `messages` is
+    the transcript to feed back as history next turn.
     """
     client = _openai_client()
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -169,34 +223,43 @@ def run_agent(user_message: str, history: list | None = None,
             model=MODEL, messages=messages, tools=TOOLS, tool_choice="auto", temperature=0)
         msg = resp.choices[0].message
 
-        if not msg.tool_calls:
-            messages.append({"role": "assistant", "content": msg.content or ""})
-            return {"answer": msg.content or "", "trace": trace, "messages": messages[1:]}
+        if msg.tool_calls:                                  # structured (preferred)
+            calls = [{"id": tc.id, "name": tc.function.name,
+                      "args": _safe_json(tc.function.arguments)} for tc in msg.tool_calls]
+            assistant_content = msg.content or ""
+            from_text = False
+        else:                                               # text fallback
+            calls = _parse_text_tool_calls(msg.content)
+            assistant_content = "" if calls else _strip_leaks(msg.content)
+            from_text = True
+
+        if not calls:                                       # final prose answer
+            messages.append({"role": "assistant", "content": assistant_content})
+            return {"answer": assistant_content, "trace": trace, "messages": messages[1:]}
 
         messages.append({
-            "role": "assistant",
-            "content": msg.content or "",
-            "tool_calls": [{
-                "id": tc.id, "type": "function",
-                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-            } for tc in msg.tool_calls],
+            "role": "assistant", "content": assistant_content,
+            "tool_calls": [{"id": c["id"], "type": "function",
+                            "function": {"name": c["name"], "arguments": json.dumps(c["args"])}}
+                           for c in calls],
         })
 
-        for tc in msg.tool_calls:
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
+        for c in calls:
             t0 = time.time()
             try:
-                result = _dispatch(tc.function.name, args, user_id)
+                result = _dispatch(c["name"], c["args"], user_id)
             except Exception as e:  # noqa: BLE001 — surface tool failure to the model
                 result = {"error": str(e)}
             ms = int((time.time() - t0) * 1000)
-            trace.append({"tool": tc.function.name, "args": args, "result": result, "ms": ms})
-            rs.log_event(user_id, user_message, tc.function.name, args, ms, _result_count(result))
-            messages.append({"role": "tool", "tool_call_id": tc.id,
+            trace.append({"tool": c["name"], "args": c["args"], "result": result, "ms": ms})
+            rs.log_event(user_id, user_message, c["name"], c["args"], ms, _result_count(result))
+            messages.append({"role": "tool", "tool_call_id": c["id"],
                              "content": json.dumps(result, default=str)})
+
+        if from_text:  # nudge the model to answer in prose, not more tool syntax
+            messages.append({"role": "system", "content":
+                             "Now answer the user's question in prose using the tool "
+                             "results above. Do not emit any tool-call syntax."})
 
     return {"answer": "I wasn't able to finish within the tool-call limit — please "
                       "narrow the question.", "trace": trace, "messages": messages[1:]}
