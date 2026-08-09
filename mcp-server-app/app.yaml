@@ -1,0 +1,17 @@
+command:
+  - python
+  - app.py
+
+resources:
+  - name: lakebase-db
+    lakebase:
+      instance: projects/stock-research-capstone/branches/production
+      database: databricks_postgres
+
+env:
+  - name: MASSIVE_API_KEY
+    secret:
+      scope: capstone
+      key: massive_api_key
+  - name: EDGAR_CONTACT_EMAIL
+    value: rohit885@gmail.com
