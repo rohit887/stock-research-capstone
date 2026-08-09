@@ -209,7 +209,7 @@ Secrets provide secure storage for sensitive credentials:
 Workspace
 └── Secrets
     ├── Scope: "lakebase"
-    │   └── Key: "password" → Value: "npg_2ewQzZBXWty1"
+    │   └── Key: "password" → Value: "<stored-in-secret: lakebase/password>"
     ├── Scope: "capstone"
     │   └── Key: "massive_api_key" → Value: "..."
     └── Scope: "production"
@@ -239,7 +239,7 @@ w.secrets.create_scope(scope="lakebase")
 w.secrets.put_secret(
     scope="lakebase",
     key="password",
-    string_value="npg_2ewQzZBXWty1"
+    string_value="<stored-in-secret: lakebase/password>"
 )
 ```
 
@@ -308,7 +308,7 @@ Think: Role = User + Permissions
 
 **Step 1: Create the role**
 ```sql
-CREATE ROLE student WITH LOGIN PASSWORD 'npg_2ewQzZBXWty1';
+CREATE ROLE student WITH LOGIN PASSWORD '<stored-in-secret: lakebase/password>';
 ```
 
 **Breakdown:**
@@ -367,7 +367,7 @@ postgresql://[user]:[password]@[host]:[port]/[database]?[parameters]
 ### Your Working Connection String
 
 ```
-postgresql://student:npg_2ewQzZBXWty1@ep-withered-union-d8dfuwlx.database.us-east-2.cloud.databricks.com:5432/databricks_postgres?sslmode=require
+postgresql://student:<stored-in-secret: lakebase/password>@ep-withered-union-d8dfuwlx.database.us-east-2.cloud.databricks.com:5432/databricks_postgres?sslmode=require
 ```
 
 ### Component Breakdown
@@ -376,7 +376,7 @@ postgresql://student:npg_2ewQzZBXWty1@ep-withered-union-d8dfuwlx.database.us-eas
 |-----------|-------|-------------|
 | **Protocol** | `postgresql://` | Standard Postgres connection protocol |
 | **User** | `student` | The Postgres role name (authentication identity) |
-| **Password** | `npg_2ewQzZBXWty1` | The role's password (from secrets: `lakebase/password`) |
+| **Password** | `<stored-in-secret: lakebase/password>` | The role's password (from secrets: `lakebase/password`) |
 | **Host** | `ep-withered-union-d8dfuwlx...` | Lakebase endpoint DNS (auto-derived from SDK) |
 | **Port** | `5432` | Standard Postgres port |
 | **Database** | `databricks_postgres` | The database name within the instance |
@@ -389,7 +389,7 @@ postgresql://student:npg_2ewQzZBXWty1@ep-withered-union-d8dfuwlx.database.us-eas
 import psycopg2
 
 # Connection string format
-connection_string = "postgresql://student:npg_2ewQzZBXWty1@ep-withered-union-d8dfuwlx.database.us-east-2.cloud.databricks.com:5432/databricks_postgres?sslmode=require"
+connection_string = "postgresql://student:<stored-in-secret: lakebase/password>@ep-withered-union-d8dfuwlx.database.us-east-2.cloud.databricks.com:5432/databricks_postgres?sslmode=require"
 conn = psycopg2.connect(connection_string)
 
 # OR parameter format (preferred for secrets):
@@ -409,7 +409,7 @@ conn = psycopg2.connect(
 **❌ Never hardcode the password in the connection string:**
 ```python
 # BAD - password visible in code
-conn_string = "postgresql://student:npg_2ewQzZBXWty1@..."
+conn_string = "postgresql://student:<stored-in-secret: lakebase/password>@..."
 ```
 
 **✅ Always retrieve from secrets:**
@@ -458,7 +458,7 @@ psql -h ep-withered-union-d8dfuwlx.database.us-east-2.cloud.databricks.com \
 
 **Create the role:**
 ```sql
-CREATE ROLE student WITH LOGIN PASSWORD 'npg_2ewQzZBXWty1';
+CREATE ROLE student WITH LOGIN PASSWORD '<stored-in-secret: lakebase/password>';
 GRANT ALL PRIVILEGES ON DATABASE databricks_postgres TO student;
 GRANT CREATE ON DATABASE databricks_postgres TO student;
 GRANT ALL PRIVILEGES ON SCHEMA public TO student;
@@ -470,7 +470,7 @@ GRANT ALL PRIVILEGES ON SCHEMA public TO student;
 ```bash
 databricks secrets create-scope lakebase
 databricks secrets put-secret lakebase password
-# Paste: npg_2ewQzZBXWty1
+# Paste: <stored-in-secret: lakebase/password>
 ```
 
 **Via Python SDK (in notebook):**
@@ -482,7 +482,7 @@ w.secrets.create_scope(scope="lakebase")
 w.secrets.put_secret(
     scope="lakebase",
     key="password",
-    string_value="npg_2ewQzZBXWty1"
+    string_value="<stored-in-secret: lakebase/password>"
 )
 ```
 
@@ -725,7 +725,7 @@ databricks lakebase start-endpoint \
 **Solution:**
 ```sql
 -- Connect with admin account first
-CREATE ROLE student WITH LOGIN PASSWORD 'npg_2ewQzZBXWty1';
+CREATE ROLE student WITH LOGIN PASSWORD '<stored-in-secret: lakebase/password>';
 GRANT ALL PRIVILEGES ON DATABASE databricks_postgres TO student;
 ```
 

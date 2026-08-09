@@ -220,7 +220,10 @@ try:
             print("✓ Role 'student' already exists")
         else:
             print("Creating role 'student'...")
-            cur.execute("CREATE ROLE student WITH LOGIN PASSWORD 'npg_2ewQzZBXWty1';")
+            # Password read from the secret at runtime — never hardcoded in the repo.
+            from psycopg2 import sql
+            _student_pw = dbutils.secrets.get("lakebase", "password")
+            cur.execute(sql.SQL("CREATE ROLE student WITH LOGIN PASSWORD {}").format(sql.Literal(_student_pw)))
             cur.execute("GRANT ALL PRIVILEGES ON DATABASE databricks_postgres TO student;")
             cur.execute("GRANT CREATE ON DATABASE databricks_postgres TO student;")
             cur.execute("GRANT ALL PRIVILEGES ON SCHEMA public TO student;")
