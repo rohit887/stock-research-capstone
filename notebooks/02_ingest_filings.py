@@ -140,10 +140,22 @@ def latest_10k(cik: str):
             "filing_date": best["filing_date"], "period_of_report": best["period_of_report"]}
 
 
+# Manual CIK overrides for reorg edge cases where the ticker map points at an
+# entity without the substantive 10-K history.
+CIK_OVERRIDE = {
+    # SEC's ticker map now points XOM at "ExxonMobil Holdings Corp" (CIK 2115436),
+    # a new holdco with no 10-Ks; the real 10-K/Item 1A history is under the
+    # operating company "Exxon Mobil Corp" (CIK 0000034088).
+    "XOM": ("0000034088", "Exxon Mobil Corp"),
+}
+
 filing_meta = []
 missing = []
 for t in TICKERS:
-    info = TICKER2CIK.get(t.upper())
+    if t.upper() in CIK_OVERRIDE:
+        info = CIK_OVERRIDE[t.upper()]
+    else:
+        info = TICKER2CIK.get(t.upper())
     if not info:
         missing.append(t)
         continue
