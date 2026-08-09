@@ -1,4 +1,11 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# dependencies = [
+#   "\"databricks-sdk>=0.125.0\"",
+# ]
+# ///
 # MAGIC %md
 # MAGIC # 03 — Retrieval test (hybrid vs vector vs BM25)
 # MAGIC

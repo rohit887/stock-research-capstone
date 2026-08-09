@@ -1,4 +1,11 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# dependencies = [
+#   "\"databricks-sdk>=0.125.0\"",
+# ]
+# ///
 # MAGIC %md
 # MAGIC # 04 — Test adapter modules (before the MCP server)
 # MAGIC
@@ -13,6 +20,16 @@
 # COMMAND ----------
 
 # MAGIC %pip install "databricks-sdk>=0.125.0"
+
+# COMMAND ----------
+
+# DBTITLE 1,Install lxml for BeautifulSoup
+# MAGIC %pip install lxml
+
+# COMMAND ----------
+
+# DBTITLE 1,Restart Python to load lxml
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
