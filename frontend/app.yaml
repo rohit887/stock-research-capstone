@@ -1,0 +1,17 @@
+# Databricks App config for the Streamlit frontend. Deploy from workspace.
+# Mirrors the MCP app's lakebase-resource pattern so PG* env vars are injected
+# for the app identity. The app also needs serving-endpoint access
+# (databricks-llama-4-maverick chat + databricks-gte-large-en embeddings) — grant
+# the app's service principal CAN QUERY on both endpoints.
+#
+# NOTE: if the app does not bind, pass the injected port explicitly, e.g.:
+#   command: ["streamlit","run","app.py","--server.port","$DATABRICKS_APP_PORT",
+#             "--server.address","0.0.0.0"]
+
+command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0"]
+
+resources:
+  - name: lakebase-db
+    lakebase:
+      instance: projects/stock-research-capstone/branches/production
+      database: databricks_postgres

@@ -80,7 +80,7 @@ push locally → **Pull** in the Databricks Git folder → **Deploy**.
 | 4 | Adapter modules (`market_data.py`, `research_store.py`) | ✅ built |
 | 5 | MCP server (`server.py`, deploy `mcp-stock-research`) | ✅ built |
 | 6 | Agent (`agent.py`) | ✅ built |
-| 7 | Streamlit frontend (`app.py`) | ⏳ |
+| 7 | Streamlit frontend (`app.py`) | ✅ built |
 | 8 | Evals (3 retrieval configs + tool-selection rate) | ⏳ |
 | 9 | Submission polish | ⏳ |
 
