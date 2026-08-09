@@ -378,8 +378,10 @@ for r, emb in zip(chunk_rows, embeddings):
                  r["chunk_text"], r["token_count"], vec_literal(emb)))
 
 with get_connection() as conn, conn.cursor() as cur:
-    if FORCE:
-        cur.execute("DELETE FROM filing_chunks WHERE section = %s;", (SECTION,))
+    if FORCE and rows:
+        # Scope the wipe to the tickers we're about to re-write (safe with only_tickers).
+        _tks = sorted({r[1] for r in rows})
+        cur.execute("DELETE FROM filing_chunks WHERE section = %s AND ticker = ANY(%s);", (SECTION, _tks))
     execute_values(
         cur,
         """
