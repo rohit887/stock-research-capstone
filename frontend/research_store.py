@@ -50,13 +50,48 @@ _STOP = {
 # --------------------------------------------------------------------------
 @contextmanager
 def get_connection():
-    """Yield a psycopg2 connection from PG* env vars (native-password role)."""
+    """Yield a psycopg2 connection from PG* env vars.
+    
+    When deployed as a Databricks App with a postgres resource, PGHOST/PGDATABASE/PGUSER
+    are injected, but PGPASSWORD is not — the app must generate an OAuth token via
+    WorkspaceClient.database.generate_database_credential().
+    
+    For notebook testing with native password auth, set PGPASSWORD in the environment.
+    """
+    import uuid
+    
+    import sys
+    
+    host = os.environ["PGHOST"]
+    dbname = os.environ.get("PGDATABASE", "databricks_postgres")
+    user = os.environ.get("PGUSER", "student")
+    port = int(os.environ.get("PGPORT", "5432"))
+    
+    # DEBUG: Check what's actually set
+    pg_vars = {k: (v if k != 'PGPASSWORD' else '<REDACTED>') for k, v in os.environ.items() if k.startswith('PG')}
+    print(f"[DEBUG] PG env vars: {pg_vars}", file=sys.stderr, flush=True)
+    print(f"[DEBUG] Parsed: user={user}, has_password={('PGPASSWORD' in os.environ)}", file=sys.stderr, flush=True)
+    
+    # In app: generate OAuth token. In notebook: use PGPASSWORD.
+    if "PGPASSWORD" in os.environ:
+        password = os.environ["PGPASSWORD"]
+        print(f"[DEBUG] Using PGPASSWORD from environment", file=sys.stderr, flush=True)
+    else:
+        # Extract endpoint name from PGHOST (e.g., "ep-withered-union-d8dfuwlx")
+        endpoint_name = host.split('.')[0]
+        print(f"[DEBUG] No PGPASSWORD, generating OAuth token for {endpoint_name}", file=sys.stderr, flush=True)
+        cred = _workspace_client().database.generate_database_credential(
+            request_id=str(uuid.uuid4()),
+            instance_names=[endpoint_name]
+        )
+        password = cred.token
+    
     conn = psycopg2.connect(
-        host=os.environ["PGHOST"],
-        dbname=os.environ.get("PGDATABASE", "databricks_postgres"),
-        user=os.environ.get("PGUSER", "student"),
-        password=os.environ["PGPASSWORD"],
-        port=int(os.environ.get("PGPORT", "5432")),
+        host=host,
+        dbname=dbname,
+        user=user,
+        password=password,
+        port=port,
         sslmode="require",
     )
     try:
