@@ -76,7 +76,9 @@ _STOP = {"the", "a", "an", "of", "to", "and", "or", "in", "on", "for", "do", "do
          "from", "with", "by", "as", "at", "that", "this", "these", "those", "our",
          "we", "us", "you", "your", "it", "its", "their", "they", "which", "who",
          "when", "where", "why", "can", "could", "should", "would", "may", "might",
-         "will", "than", "then", "say", "says", "describe", "worry", "worries"}
+         "will", "than", "then", "say", "says", "describe", "worry", "worries",
+         # structural tokens present in every Item 1A chunk -> pure BM25 noise
+         "item", "1a", "1b", "1c", "part"}
 
 
 def _or_tsquery(query: str) -> str:
