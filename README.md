@@ -77,7 +77,7 @@ push locally → **Pull** in the Databricks Git folder → **Deploy**.
 | 1 | Price ingestion (`01_ingest_prices.py`) | ✅ built |
 | 2 | EDGAR filing ingestion, Spark (`02_ingest_filings.py`) | ✅ built |
 | 3 | Retrieval test (`03_eval_retrieval.py` v1) | ✅ built |
-| 4 | Adapter modules (`market_data.py`, `research_store.py`) | ⏳ |
+| 4 | Adapter modules (`market_data.py`, `research_store.py`) | ✅ built |
 | 5 | MCP server (`server.py`, deploy `mcp-stock-research`) | ⏳ |
 | 6 | Agent (`agent.py`) | ⏳ |
 | 7 | Streamlit frontend (`app.py`) | ⏳ |
