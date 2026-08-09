@@ -154,7 +154,7 @@ def upsert_prices(conn, ticker: str, bars: list) -> int:
     rows = []
     for b in bars:
         # Massive/Polygon daily timestamp `t` is epoch milliseconds.
-        d = datetime.datetime.utcfromtimestamp(b["t"] / 1000).date()
+        d = datetime.datetime.fromtimestamp(b["t"] / 1000, datetime.timezone.utc).date()
         rows.append((ticker, d, b.get("o"), b.get("h"), b.get("l"), b.get("c"), b.get("v")))
     if not rows:
         return 0
