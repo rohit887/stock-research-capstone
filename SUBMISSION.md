@@ -1,37 +1,29 @@
 # Submission checklist
 
-Databricks Apps stop ~24h after deploy. **Capture everything before the URL dies,
-and redeploy immediately before submitting.** The video is the only artifact that
-survives the app auto-stopping.
+Free Edition apps auto-stop (and have a daily run limit), so proof of a working
+system is captured as **screenshots + documentation** — see [`EVIDENCE.md`](EVIDENCE.md).
 
-## Redeploy + record URLs
-- [ ] Redeploy `mcp-stock-research`, confirm running — URL: `__________`
-- [ ] Redeploy `stock-research-assistant` (frontend), confirm running — URL: `__________`
+## Captured evidence (in the repo)
+- [x] Frontend app deployed — `snapshots/app-frontend.png`
+- [x] MCP server app deployed — `snapshots/mcp-server.png`
+- [x] 7 live Q&A screenshots with visible tool-call traces — `snapshots/question1–7.png`
+- [x] `EVIDENCE.md` consolidating deployment, transcripts, eval, and data counts
+- [x] README: architecture, honest measured eval, design decisions, worked examples, limitations
+- [x] Eval: recall@5 + MRR across vector / bm25 / hybrid + tool-selection rate
+- [x] Disclaimer visible in the UI (see snapshots)
+- [x] No credentials in source (apps read the Postgres URL from a Databricks secret)
 
-## Video walkthrough (2–4 min) — the key artifact
-Record this exact loop:
-- [ ] Add a ticker to the watchlist (sidebar)
-- [ ] Ask a combined question (e.g. *"How has NVDA performed this year, and what
-      does it say about supply-chain risk?"*)
-- [ ] Expand the **🔧 tool call(s)** trace to show `get_price_summary` + `search_filings`
-- [ ] Answer cites a real filing passage
-- [ ] Ask the agent to save a note → refresh the page → note + watchlist persist
-- [ ] Ask an out-of-corpus question (Tesla) → agent declines rather than fabricating
+## To do at submission time
+- [ ] Zip the source: `git archive -o capstone-source.zip HEAD`
+      (snapshots are committed, so they're included; git history is **not**, so the
+      zip contains no secrets)
+- [ ] (Optional but strongest) 2–4 min screen recording of the app loop:
+      watchlist → combined question → visible tool trace → cited passage → save note
+      → refresh persists → out-of-corpus question declines
+- [ ] Record both live app URLs in the submission text (from the snapshots)
 
-## Screenshots
-- [ ] Frontend with data (chat + sidebar)
-- [ ] Lakebase tables with row counts (`companies` 36, `price_history` ~9,900,
-      `filings` 36, `filing_chunks` 3,377, `agent_events` > 0)
-- [ ] AI Playground showing the agent calling the `mcp-stock-research` MCP tools
-
-## Artifacts already in the repo
-- [x] README: architecture, single-store, hybrid-search finding, why-not-Agent-Bricks,
-      Spark-for-filings-not-prices, limitations, next steps
-- [x] Eval results: recall@5 + MRR across vector / bm25 / hybrid + tool-selection rate
-- [x] ≥3 worked NL examples with tool calls (README)
-- [x] Disclaimer visible in the UI
-- [ ] Source zip: `git archive -o capstone-source.zip HEAD`
-
-## Security TODO (before/after submission)
-- [ ] Rotate the `student` Lakebase password (it appeared in git history) and update
-      the `lakebase/password` secret. Keep all secrets in Databricks secret scopes.
+## Security note
+The current tree is clean of secrets, and the `git archive` zip includes only the
+current tree (no history). Separately, **rotate the `student` Lakebase password**
+if convenient — an earlier value appeared in git *history* (not in the zip). All
+secrets are stored in Databricks secret scopes and referenced by name only.

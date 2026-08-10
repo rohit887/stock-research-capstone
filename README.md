@@ -14,6 +14,9 @@ prices have **moved**, and record findings back into persistent state.
 
 Databricks "Rise of the AI Data Engineer" capstone · Databricks Free Edition.
 
+📸 **Proof it works:** see [`EVIDENCE.md`](EVIDENCE.md) — both apps deployed, live
+tool-call screenshots in [`snapshots/`](snapshots/), and the measured eval results.
+
 ---
 
 ## Architecture
@@ -21,8 +24,9 @@ Databricks "Rise of the AI Data Engineer" capstone · Databricks Free Edition.
 - **Lakebase (Postgres 17)** — single store: user state, prices, filing chunks, embeddings.
 - **Lakebase Search** — `lakebase_ann` (vector) + native Postgres FTS for hybrid retrieval fused by RRF.
 - **Model serving** — `databricks-llama-4-maverick` (chat), `databricks-gte-large-en` (embeddings, 1024-dim).
-- **MCP server** — custom `fastmcp` server exposing the tools over SSE, deployed as the Databricks App `mcp-stock-research`.
-- **Frontend** — a separate Streamlit Databricks App.
+- **MCP server** — custom `fastmcp` server exposing the tools over SSE, deployed as the Databricks App `stock-research-mcp-server` (source: `mcp-server-app/`).
+- **Frontend** — the Streamlit Databricks App `stock-research-assistant` (source: `frontend/`).
+- **Connection** — deployed apps read the Postgres URL from a Databricks secret (`lakebase/connection-url`, base64-decoded at runtime); notebooks connect via `dbutils`/`PG*` env. No credentials in source.
 - **Deliberately excluded** — Genie, Delta tables, Databricks Vector Search, Agent Bricks.
 
 ```
@@ -66,7 +70,7 @@ stock-research-capstone/
 | 2 | EDGAR filing ingestion (Spark) | ✅ |
 | 3 | Retrieval test (3 configs) | ✅ |
 | 4 | Adapter modules | ✅ |
-| 5 | MCP server (`mcp-stock-research`) | ✅ deployed |
+| 5 | MCP server (`stock-research-mcp-server`) | ✅ deployed |
 | 6 | Agent (llama-4-maverick tool-calling) | ✅ |
 | 7 | Streamlit frontend | ✅ deployed |
 | 8 | Eval harness | ✅ |
