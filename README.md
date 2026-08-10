@@ -23,8 +23,8 @@ tool-call screenshots in [`snapshots/`](snapshots/), and the measured eval resul
 
 - **Repository:** https://github.com/rohit887/stock-research-capstone
 - **Live apps (Databricks Free Edition):**
-  - Frontend (Streamlit): `stock-research-assistant` — `<paste live URL>`
-  - MCP server: `stock-research-mcp-server` — `<paste live URL>`
+  - Frontend (Streamlit): https://new-app-7474649202900398.aws.databricksapps.com/
+  - MCP server (SSE): https://mcp-research-server-7474649202900398.aws.databricksapps.com/
 - **Evidence:** [`EVIDENCE.md`](EVIDENCE.md) + [`snapshots/`](snapshots/) (apps auto-stop on Free Edition; screenshots captured while running).
 
 ### Mandatory requirements — all five met (and proven)
@@ -50,8 +50,8 @@ hybrid on this corpus (a measured result, not a claim). See Eval results below.
 - **Lakebase (Postgres 17)** — single store: user state, prices, filing chunks, embeddings.
 - **Lakebase Search** — `lakebase_ann` (vector) + native Postgres FTS for hybrid retrieval fused by RRF.
 - **Model serving** — `databricks-llama-4-maverick` (chat), `databricks-gte-large-en` (embeddings, 1024-dim).
-- **MCP server** — custom `fastmcp` server exposing the tools over SSE, deployed as the Databricks App `stock-research-mcp-server` (source: `mcp-server-app/`).
-- **Frontend** — the Streamlit Databricks App `stock-research-assistant` (source: `frontend/`).
+- **MCP server** — custom `fastmcp` server exposing the tools over SSE, deployed as a Databricks App (source: `mcp-server-app/`; live URL in Submission above).
+- **Frontend** — a Streamlit Databricks App (source: `frontend/`; live URL in Submission above).
 - **Connection** — deployed apps read the Postgres URL from a Databricks secret (`lakebase/connection-url`, base64-decoded at runtime); notebooks connect via `dbutils`/`PG*` env. No credentials in source.
 - **Deliberately excluded** — Genie, Delta tables, Databricks Vector Search, Agent Bricks.
 
@@ -96,7 +96,7 @@ stock-research-capstone/
 | 2 | EDGAR filing ingestion (Spark) | ✅ |
 | 3 | Retrieval test (3 configs) | ✅ |
 | 4 | Adapter modules | ✅ |
-| 5 | MCP server (`stock-research-mcp-server`) | ✅ deployed |
+| 5 | MCP server (fastmcp / SSE, source `mcp-server-app/`) | ✅ deployed |
 | 6 | Agent (llama-4-maverick tool-calling) | ✅ |
 | 7 | Streamlit frontend | ✅ deployed |
 | 8 | Eval harness | ✅ |

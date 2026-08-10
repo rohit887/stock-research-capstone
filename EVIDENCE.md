@@ -8,10 +8,19 @@ plus the measured eval outputs. Screenshots are in [`snapshots/`](snapshots/).
 
 ## 1. Both apps deployed on Databricks Apps
 
+**Live URLs:**
+- Frontend: https://new-app-7474649202900398.aws.databricksapps.com/
+- MCP server: https://mcp-research-server-7474649202900398.aws.databricksapps.com/
+
 | App | Screenshot | Evidence |
 |---|---|---|
-| Streamlit frontend `stock-research-assistant` | [`snapshots/app-frontend.png`](snapshots/app-frontend.png) | deployed from `/Workspace/…/frontend`, deploy history, live URL |
-| MCP server `stock-research-mcp-server` | [`snapshots/mcp-server.png`](snapshots/mcp-server.png) | deployed from `/Workspace/…/mcp-server-app`, app resources: Lakebase `databricks_postgres` (branch `production`) + secret, service principal |
+| Streamlit frontend | [`snapshots/app-frontend.png`](snapshots/app-frontend.png) | deployed from `/Workspace/…/frontend`, deploy history, live URL |
+| MCP server | [`snapshots/mcp-server.png`](snapshots/mcp-server.png) | deployed from `/Workspace/…/mcp-server-app`; app resources: Lakebase `databricks_postgres` (branch `production`) + secret, service principal |
+
+> The apps were recreated after a Free-Edition database-branch reset, so the live
+> URLs above (`new-app`, `mcp-research-server`) differ from the app names on the
+> earlier deployment-page screenshots. The running-app Q&A shots (`question1–7.png`)
+> are from the live frontend URL.
 
 ---
 
