@@ -50,15 +50,43 @@ _STOP = {
 # --------------------------------------------------------------------------
 @contextmanager
 def get_connection():
-    """Yield a psycopg2 connection from PG* env vars (native-password role)."""
-    conn = psycopg2.connect(
-        host=os.environ["PGHOST"],
-        dbname=os.environ.get("PGDATABASE", "databricks_postgres"),
-        user=os.environ.get("PGUSER", "student"),
-        password=os.environ["PGPASSWORD"],
-        port=int(os.environ.get("PGPORT", "5432")),
-        sslmode="require",
-    )
+    """Yield a psycopg2 connection from Databricks secret.
+    
+    Fetches the full PostgreSQL connection URL from a Databricks secret at runtime.
+    The secret location is specified via LAKEBASE_SECRET_SCOPE and LAKEBASE_SECRET_KEY
+    environment variables (set in app.yaml).
+    
+    The URL is stored plain in the secret; Databricks base64-encodes it at rest,
+    so we decode it once here before passing to psycopg2.
+    
+    Pattern from: Lakebase + Databricks App secrets runbook
+    """
+    import base64
+    
+    scope = os.environ.get("LAKEBASE_SECRET_SCOPE")
+    key = os.environ.get("LAKEBASE_SECRET_KEY")
+    
+    if not scope or not key:
+        raise ValueError(
+            "Missing LAKEBASE_SECRET_SCOPE or LAKEBASE_SECRET_KEY environment variables. "
+            "Set these in app.yaml to point to the secret containing the PostgreSQL connection URL."
+        )
+    
+    # Fetch the secret via Databricks SDK
+    secret = _workspace_client().secrets.get_secret(scope=scope, key=key)
+    
+    # Decode once (Databricks base64-encodes secrets at rest)
+    connection_url = base64.b64decode(secret.value).decode("utf-8")
+    
+    # Validate it's a proper URL (not double-encoded)
+    if not connection_url.startswith("postgresql://"):
+        raise ValueError(
+            f"Secret does not contain a valid PostgreSQL URL. "
+            f"Got: {connection_url[:40]!r}... (may be double-encoded)"
+        )
+    
+    # Connect using the full URL
+    conn = psycopg2.connect(connection_url)
     try:
         yield conn
     finally:

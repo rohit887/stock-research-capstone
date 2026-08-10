@@ -5,3 +5,7 @@ command:
 env:
   - name: EDGAR_CONTACT_EMAIL
     value: rohit885@gmail.com
+  - name: LAKEBASE_SECRET_SCOPE
+    value: lakebase
+  - name: LAKEBASE_SECRET_KEY
+    value: connection-url

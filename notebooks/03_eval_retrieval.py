@@ -4,6 +4,7 @@
 # environment_version = "5"
 # dependencies = [
 #   "\"databricks-sdk>=0.125.0\"",
+#   "openai",
 # ]
 # ///
 # MAGIC %md

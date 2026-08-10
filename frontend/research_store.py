@@ -50,50 +50,46 @@ _STOP = {
 # --------------------------------------------------------------------------
 @contextmanager
 def get_connection():
-    """Yield a psycopg2 connection from PG* env vars.
+    """Yield a psycopg2 connection from Databricks secret.
     
-    When deployed as a Databricks App with a postgres resource, PGHOST/PGDATABASE/PGUSER
-    are injected, but PGPASSWORD is not — the app must generate an OAuth token via
-    WorkspaceClient.database.generate_database_credential().
+    Fetches the full PostgreSQL connection URL from a Databricks secret at runtime.
+    The secret location is specified via LAKEBASE_SECRET_SCOPE and LAKEBASE_SECRET_KEY
+    environment variables (set in app.yaml).
     
-    For notebook testing with native password auth, set PGPASSWORD in the environment.
+    The URL is stored plain in the secret; Databricks base64-encodes it at rest,
+    so we decode it once here before passing to psycopg2.
+    
+    Pattern from: Lakebase + Databricks App secrets runbook
     """
-    import uuid
-    
+    import base64
     import sys
     
-    host = os.environ["PGHOST"]
-    dbname = os.environ.get("PGDATABASE", "databricks_postgres")
-    user = os.environ.get("PGUSER", "student")
-    port = int(os.environ.get("PGPORT", "5432"))
+    scope = os.environ.get("LAKEBASE_SECRET_SCOPE")
+    key = os.environ.get("LAKEBASE_SECRET_KEY")
     
-    # DEBUG: Check what's actually set
-    pg_vars = {k: (v if k != 'PGPASSWORD' else '<REDACTED>') for k, v in os.environ.items() if k.startswith('PG')}
-    print(f"[DEBUG] PG env vars: {pg_vars}", file=sys.stderr, flush=True)
-    print(f"[DEBUG] Parsed: user={user}, has_password={('PGPASSWORD' in os.environ)}", file=sys.stderr, flush=True)
-    
-    # In app: generate OAuth token. In notebook: use PGPASSWORD.
-    if "PGPASSWORD" in os.environ:
-        password = os.environ["PGPASSWORD"]
-        print(f"[DEBUG] Using PGPASSWORD from environment", file=sys.stderr, flush=True)
-    else:
-        # Extract endpoint name from PGHOST (e.g., "ep-withered-union-d8dfuwlx")
-        endpoint_name = host.split('.')[0]
-        print(f"[DEBUG] No PGPASSWORD, generating OAuth token for {endpoint_name}", file=sys.stderr, flush=True)
-        cred = _workspace_client().database.generate_database_credential(
-            request_id=str(uuid.uuid4()),
-            instance_names=[endpoint_name]
+    if not scope or not key:
+        raise ValueError(
+            "Missing LAKEBASE_SECRET_SCOPE or LAKEBASE_SECRET_KEY environment variables. "
+            "Set these in app.yaml to point to the secret containing the PostgreSQL connection URL."
         )
-        password = cred.token
     
-    conn = psycopg2.connect(
-        host=host,
-        dbname=dbname,
-        user=user,
-        password=password,
-        port=port,
-        sslmode="require",
-    )
+    # Fetch the secret via Databricks SDK
+    secret = _workspace_client().secrets.get_secret(scope=scope, key=key)
+    
+    # Decode once (Databricks base64-encodes secrets at rest)
+    connection_url = base64.b64decode(secret.value).decode("utf-8")
+    
+    # Validate it's a proper URL (not double-encoded)
+    if not connection_url.startswith("postgresql://"):
+        raise ValueError(
+            f"Secret does not contain a valid PostgreSQL URL. "
+            f"Got: {connection_url[:40]!r}... (may be double-encoded)"
+        )
+    
+    print(f"[DEBUG] Connecting via secret {scope}/{key}", file=sys.stderr, flush=True)
+    
+    # Connect using the full URL
+    conn = psycopg2.connect(connection_url)
     try:
         yield conn
     finally:

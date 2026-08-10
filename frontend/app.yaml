@@ -11,18 +11,7 @@
 command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0"]
 
 env:
-  - name: PGUSER
-    value: student
-  - name: PGPASSWORD
-    value: npg_2ewQzZBXWty1
-
-resources:
-  - name: lakebase-db
-    lakebase:
-      instance: projects/stock-research-capstone/branches/production
-      database: databricks_postgres
-  - name: secret
-    secret:
-      scope: lakebase
-      key: password
-      permission: READ
+  - name: LAKEBASE_SECRET_SCOPE
+    value: lakebase
+  - name: LAKEBASE_SECRET_KEY
+    value: connection-url
