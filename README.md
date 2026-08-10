@@ -19,6 +19,32 @@ tool-call screenshots in [`snapshots/`](snapshots/), and the measured eval resul
 
 ---
 
+## Submission
+
+- **Repository:** https://github.com/rohit887/stock-research-capstone
+- **Live apps (Databricks Free Edition):**
+  - Frontend (Streamlit): `stock-research-assistant` — `<paste live URL>`
+  - MCP server: `stock-research-mcp-server` — `<paste live URL>`
+- **Evidence:** [`EVIDENCE.md`](EVIDENCE.md) + [`snapshots/`](snapshots/) (apps auto-stop on Free Edition; screenshots captured while running).
+
+### Mandatory requirements — all five met (and proven)
+
+| # | Requirement | How it's met | Where |
+|---|---|---|---|
+| 1 | Data pipeline in Spark | Distributed 10-K ingestion via Spark RDD `flatMap` — fetch → strip HTML → extract Item 1A → chunk, across 36 filings | `notebooks/02_ingest_filings.py` |
+| 2 | ≥1 third-party API | **Two**: Massive Stocks API (prices) + SEC EDGAR (filings), isolated in the adapter | `01_ingest_prices.py`, `market_data.py` |
+| 3 | Unstructured-data processing | 10-K **Item 1A** text parsed, chunked, embedded to 1024-dim for semantic retrieval | `02_ingest_filings.py`, `search_filings` |
+| 4 | Databricks App with a frontend | Streamlit app `stock-research-assistant` — watchlist, chat, visible tool traces | `frontend/app.py` |
+| 5 | AI agent with search **and** write tools | Read (`search_filings`, `get_price_summary`, `compare_tickers`, `assess_risk_signal`) + real write (`add_to_watchlist`, `save_research_note`) tools that persist to Lakebase | `frontend/agent.py`, `research_store.py` |
+
+**Beyond the bar:** the MCP server is a **separate reusable deployable**; the eval
+**measures all three retrieval configs** and reports — honestly — that vector beat
+hybrid on this corpus (a measured result, not a claim). See Eval results below.
+
+---
+
+---
+
 ## Architecture
 
 - **Lakebase (Postgres 17)** — single store: user state, prices, filing chunks, embeddings.
